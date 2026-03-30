@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trading Journal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      html { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+      body { margin: 0; background: #f1f5f9; -webkit-font-smoothing: antialiased; color: #0f172a; }
+      input, select, textarea, button { font-family: inherit; }
+
+      /* Interactive states that can't be done with inline styles */
+      .tr-hover:hover { background: #f8fafc; }
+      .icon-btn { background: none; border: none; cursor: pointer; color: #94a3b8; padding: 4px 6px; border-radius: 6px; line-height: 1; transition: color 0.1s, background 0.1s; }
+      .icon-btn:hover { color: #0f172a; background: #f1f5f9; }
+      .btn-secondary:hover { background: #f1f5f9 !important; }
+      .btn-primary:hover { background: #1e293b !important; }
+      .tab-pill:hover { color: #0f172a !important; }
+
+      input:focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12) !important;
+      }
+
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
