@@ -49,7 +49,8 @@
 
 ## Screenshots
 
-> _Add screenshots here_
+<img width="1259" height="805" alt="Screenshot 2026-03-30 224321" src="https://github.com/user-attachments/assets/73f2210f-e29d-4169-b158-e7291aecf45e" />
+
 
 ---
 
