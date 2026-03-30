@@ -20,16 +20,30 @@
 
 ## Features
 
-| | |
-|---|---|
-| Trade log | Log long/short trades with symbol, entry/exit, quantity, strategy, risk & notes |
-| Auto P&L | Profit & loss calculated automatically for every closed trade |
-| Calendar | Monthly and weekly calendar view showing daily net P&L at a glance |
-| Analytics | Cumulative P&L curve and P&L breakdown by strategy |
-| Screenshots | Attach up to 3 chart screenshots per trade |
-| Currency | Switch between USD ($) and EUR (€) — persisted across sessions |
-| CSV import/export | Round-trip your data to Excel or Google Sheets |
-| Fully offline | No internet connection needed, ever |
+**Trade Logging**
+- Log long and short trades with symbol, date, quantity, entry/exit price, strategy, risk, and notes
+- Open positions supported — leave exit blank until the trade is closed
+- Attach up to 3 chart screenshots per trade with automatic image compression
+
+**Performance Tracking**
+- Automatic P&L calculation for both long and short trades
+- Dashboard stat cards: total P&L, win rate, average win/loss, and open position count
+- Calendar view (month/week) showing net P&L per day at a glance
+
+**Analytics**
+- Cumulative P&L line chart over time
+- P&L breakdown by strategy (bar chart)
+- Requires at least 2 closed trades to display
+
+**Data Management**
+- Export your full journal to CSV — compatible with Excel and Google Sheets
+- Import trades from a previously exported CSV (appends, does not overwrite)
+- Switch display currency between USD ($) and EUR (€), persisted across sessions
+
+**Privacy & Portability**
+- Fully offline — no internet connection required, ever
+- No account, no subscription, no telemetry
+- All data stored locally; survives uninstalls and updates
 
 ---
 
