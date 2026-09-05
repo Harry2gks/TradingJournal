@@ -21,9 +21,28 @@ function calcPnL(t) {
   return parseFloat((diff * t.qty).toFixed(2));
 }
 
-function fmtCcy(n, currency = "USD") {
+function ccySym(currency = "USD") {
+  return currency === "EUR" ? "€" : "$";
+}
+
+// Formats profit: +/- prefix, numeric value, then currency symbol after (e.g. +150.00 $, -50.00 €)
+function fmtProfitCcy(n, currency = "USD") {
   if (n === null || n === undefined || isNaN(n)) return "—";
-  return (n >= 0 ? "+" : "") + n.toLocaleString("en-US", { style: "currency", currency, minimumFractionDigits: 2 });
+  const absFormatted = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const sign = n > 0 ? "+" : n < 0 ? "-" : "";
+  return `${sign}${absFormatted} ${ccySym(currency)}`;
+}
+
+// Formats unsigned numerical value with currency symbol after (e.g. 5.00 $, 100.00 €) without +/- signs
+function fmtValueCcy(n, currency = "USD") {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const absFormatted = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${absFormatted} ${ccySym(currency)}`;
+}
+
+// General currency formatter with currency symbol placed after numerical value
+function fmtCcy(n, currency = "USD") {
+  return fmtProfitCcy(n, currency);
 }
 
 // Convert YYYY-MM-DD → DD.MM.YYYY for display
@@ -59,7 +78,7 @@ function compressImage(dataUrl, maxWidth = 1800, quality = 0.82) {
 
 function exportCSV(trades) {
   if (!trades.length) return;
-  const headers = ["Date","Instrument","Direction","Entry","Stop","Exit","Win/Lose","Position Size","P&L","Profit","Fee","Setup","Risk","Setup Grade","Notes"];
+  const headers = ["Date","Symbol","Direction","Entry","Stop","Exit","Win/Lose","Position Size","P&L","Profit","Fee","Setup","Risk","Setup Grade","Notes"];
   const rows = trades.map(t => {
     const pnl = calcPnL(t);
     return [t.date, t.symbol, t.direction, t.entry ?? "", t.stop ?? "", t.exit ?? "", t.result || "", t.qty ?? "", pnl ?? "", t.profit ?? "", t.fee ?? "", t.strategy || "", t.risk ?? "", t.setupGrade || "", t.notes || ""]
@@ -152,114 +171,262 @@ function ChartTooltip({ active, payload, label, currency = "USD" }) {
   );
 }
 
-// ── Trade Detail Modal (read-only) ─────────────────────────────────────
+// ── Trade Detail Modal (read-only view matching TradeModal layout) ─────
 function TradeDetailModal({ trade, onClose, onEdit, currency = "USD" }) {
   const [lightbox, setLightbox] = useState(null);
-  const pnl = calcPnL(trade);
   const screenshots = trade.screenshots || [];
+  const hasNotes = Boolean(trade.notes && trade.notes.trim());
+  const hasShots = screenshots.length > 0;
+
+  const cellThStyle = {
+    padding: "8px 10px",
+    background: "#f1f5f9",
+    borderRight: `1px solid ${T.border}`,
+    borderBottom: `1px solid ${T.border}`,
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: T.textSec,
+    whiteSpace: "nowrap",
+    textAlign: "left",
+  };
+
+  const cellTdStyle = {
+    padding: "7px 10px",
+    borderRight: `1px solid ${T.border}`,
+    background: "#fff",
+    verticalAlign: "middle",
+    fontSize: 13,
+    color: T.text,
+    fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
+  };
 
   const dash = <span style={{ color: T.textMuted }}>—</span>;
-
-  const resultLabel = { win: "Win", loss: "Loss", breakeven: "Breakeven" }[trade.result] || null;
-  const resultColor = { win: T.green, loss: T.red, breakeven: T.textMuted }[trade.result] || T.textMuted;
-
-  const fields = [
-    { label: "Date",          value: trade.date ? fmtDate(trade.date) : dash },
-    { label: "Entry",         value: trade.entry ? (+trade.entry).toFixed(2) : dash },
-    { label: "Stop",          value: trade.stop  ? (+trade.stop).toFixed(2)  : dash },
-    { label: "Exit",          value: trade.exit  ? (+trade.exit).toFixed(2)  : <span style={{ color: T.textMuted }}>Open</span> },
-    { label: "Win / Lose",    value: resultLabel  ? <span style={{ color: resultColor, fontWeight: 600 }}>{resultLabel}</span> : dash },
-    { label: "Position Size", value: trade.qty   ? (+trade.qty).toLocaleString() : dash },
-    { label: "Profit",        value: trade.profit != null ? fmtCcy(+trade.profit, currency) : dash },
-    { label: "Fee",           value: trade.fee   ? fmtCcy(+trade.fee, currency)  : dash },
-    { label: "Setup",         value: trade.strategy || dash },
-    { label: "Risk",          value: trade.risk  ? fmtCcy(+trade.risk, currency) : dash },
-    { label: "Setup Grade",   value: trade.setupGrade || dash },
-  ];
+  const pnlVal = trade.profit != null ? trade.profit : calcPnL(trade);
 
   return (
     <>
-      {/* Backdrop */}
       <div
         onClick={e => e.target === e.currentTarget && onClose()}
-        style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(2px)" }}
+        style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(2px)", padding: 16 }}
       >
-        <div style={{ background: T.surface, borderRadius: 16, width: 620, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", border: `1px solid ${T.border}` }}>
+        <div style={{ background: T.surface, borderRadius: 14, width: 1340, maxWidth: "98vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", border: `1px solid ${T.border}`, display: "flex", flexDirection: "column" }}>
 
           {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 20, fontWeight: 700, color: T.text, letterSpacing: "-0.02em" }}>{trade.symbol}</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${T.border}`, background: "#f8fafc" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: T.textSec, background: "#e2e8f0", padding: "3px 8px", borderRadius: 4 }}>Trade View</span>
+              <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: T.text }}>{trade.symbol}</h2>
               <span style={{
                 display: "inline-flex", alignItems: "center", gap: 3,
-                padding: "3px 9px", borderRadius: 20, fontSize: 12, fontWeight: 500,
+                padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600,
                 background: trade.direction === "long" ? T.greenBg : T.redBg,
                 color: trade.direction === "long" ? T.greenText : T.redText,
+                textTransform: "capitalize",
               }}>
                 {trade.direction === "long" ? "↑" : "↓"} {trade.direction}
               </span>
-              {pnl !== null && (
-                <span style={{ fontSize: 16, fontWeight: 600, color: pnl >= 0 ? T.green : T.red, fontVariantNumeric: "tabular-nums" }}>
-                  {fmtCcy(pnl, currency)}
+              {pnlVal !== null && pnlVal !== undefined && (
+                <span style={{ fontSize: 14, fontWeight: 700, color: pnlVal >= 0 ? T.green : T.red, fontVariantNumeric: "tabular-nums" }}>
+                  {fmtCcy(pnlVal, currency)}
                 </span>
               )}
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-              <button onClick={onEdit} className="btn-secondary"
-                style={{ cursor: "pointer", border: `1px solid ${T.border}`, background: T.surface, color: T.textSec, padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 5 }}>
-                <svg width="12" height="12" viewBox="0 0 13 13" fill="none"><path d="M9 2l2 2-6 6H3V8l6-6z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
-                Edit
-              </button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {onEdit && (
+                <button onClick={onEdit} className="btn-secondary"
+                  style={{ cursor: "pointer", border: `1px solid ${T.border}`, background: T.surface, color: T.textSec, padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <svg width="12" height="12" viewBox="0 0 13 13" fill="none"><path d="M9 2l2 2-6 6H3V8l6-6z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+                  Edit
+                </button>
+              )}
               <button onClick={onClose} className="icon-btn" style={{ fontSize: 18, lineHeight: 1 }}>×</button>
             </div>
           </div>
 
-          {/* Details grid */}
-          <div style={sectionDivider} />
-          <div style={{ padding: "20px 24px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px 20px" }}>
-            {fields.map(({ label, value }) => (
-              <div key={label}>
-                <div style={sectionHeading}>{label}</div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: T.text, fontVariantNumeric: "tabular-nums" }}>{value}</div>
-              </div>
-            ))}
+          {/* Excel / Spreadsheet row table */}
+          <div style={{ padding: "20px 20px 10px", overflowX: "auto" }}>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1240 }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...cellThStyle, width: 95 }}>Symbol</th>
+                    <th style={{ ...cellThStyle, width: 105 }}>Date</th>
+                    <th style={{ ...cellThStyle, width: 105 }}>Direction</th>
+                    <th style={{ ...cellThStyle, width: 85 }}>Entry</th>
+                    <th style={{ ...cellThStyle, width: 85 }}>Stop</th>
+                    <th style={{ ...cellThStyle, width: 85 }}>Exit</th>
+                    <th style={{ ...cellThStyle, width: 105 }}>Win / Lose</th>
+                    <th style={{ ...cellThStyle, width: 90 }}>Size</th>
+                    <th style={{ ...cellThStyle, width: 95 }}>Profit</th>
+                    <th style={{ ...cellThStyle, width: 85 }}>Fee</th>
+                    <th style={{ ...cellThStyle, width: 220 }}>Setup</th>
+                    <th style={{ ...cellThStyle, width: 85 }}>Risk</th>
+                    <th style={{ ...cellThStyle, width: 85, borderRight: "none" }}>Grade</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {/* 1. Symbol */}
+                    <td style={{ ...cellTdStyle, fontWeight: 700, textTransform: "uppercase" }}>
+                      {trade.symbol || dash}
+                    </td>
+
+                    {/* 2. Date */}
+                    <td style={cellTdStyle}>
+                      {trade.date ? fmtDate(trade.date) : dash}
+                    </td>
+
+                    {/* 3. Direction */}
+                    <td style={cellTdStyle}>
+                      <span style={{
+                        display: "inline-block",
+                        padding: "3px 8px",
+                        borderRadius: 4,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        textTransform: "capitalize",
+                        background: trade.direction === "long" ? T.greenBg : T.redBg,
+                        color: trade.direction === "long" ? T.greenText : T.redText,
+                        border: `1px solid ${trade.direction === "long" ? T.green : T.red}`,
+                      }}>
+                        {trade.direction || "Long"}
+                      </span>
+                    </td>
+
+                    {/* 4. Entry */}
+                    <td style={cellTdStyle}>
+                      {trade.entry != null ? (+trade.entry).toFixed(2) : dash}
+                    </td>
+
+                    {/* 5. Stop */}
+                    <td style={cellTdStyle}>
+                      {trade.stop != null ? (+trade.stop).toFixed(2) : dash}
+                    </td>
+
+                    {/* 6. Exit */}
+                    <td style={cellTdStyle}>
+                      {trade.exit != null ? (+trade.exit).toFixed(2) : <span style={{ color: T.textMuted }}>Open</span>}
+                    </td>
+
+                    {/* 7. Win / Lose */}
+                    <td style={cellTdStyle}>
+                      {trade.result ? (
+                        <span style={{
+                          display: "inline-block",
+                          padding: "3px 8px",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          textTransform: "capitalize",
+                          background: trade.result === "win" ? T.greenBg : trade.result === "loss" ? T.redBg : "#f1f5f9",
+                          color: trade.result === "win" ? T.greenText : trade.result === "loss" ? T.redText : T.textSec,
+                          border: `1px solid ${trade.result === "win" ? T.green : trade.result === "loss" ? T.red : T.border}`,
+                        }}>
+                          {trade.result === "win" ? "Win" : trade.result === "loss" ? "Lose" : "BE"}
+                        </span>
+                      ) : dash}
+                    </td>
+
+                    {/* 8. Position Size */}
+                    <td style={cellTdStyle}>
+                      {trade.qty != null ? (+trade.qty).toLocaleString() : dash}
+                    </td>
+
+                    {/* 9. Profit */}
+                    <td style={{
+                      ...cellTdStyle,
+                      fontWeight: 700,
+                      color: pnlVal > 0 ? T.greenText : pnlVal < 0 ? T.redText : T.text,
+                    }}>
+                      {pnlVal != null && pnlVal !== undefined ? fmtProfitCcy(+pnlVal, currency) : dash}
+                    </td>
+
+                    {/* 10. Fee */}
+                    <td style={cellTdStyle}>
+                      {trade.fee != null ? fmtValueCcy(+trade.fee, currency) : dash}
+                    </td>
+
+                    {/* 11. Setup */}
+                    <td style={cellTdStyle}>
+                      {trade.strategy || dash}
+                    </td>
+
+                    {/* 12. Risk */}
+                    <td style={cellTdStyle}>
+                      {trade.risk != null ? fmtValueCcy(+trade.risk, currency) : dash}
+                    </td>
+
+                    {/* 13. Setup Grade */}
+                    <td style={{ ...cellTdStyle, borderRight: "none", fontWeight: 600 }}>
+                      {trade.setupGrade || dash}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* Notes */}
-          {trade.notes && (
-            <>
-              <div style={sectionDivider} />
-              <div style={{ padding: "20px 24px" }}>
-                <div style={sectionHeading}>Notes</div>
-                <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{trade.notes}</div>
-              </div>
-            </>
-          )}
-
-          {/* Screenshots */}
-          {screenshots.length > 0 && (
-            <>
-              <div style={sectionDivider} />
-              <div style={{ padding: "20px 24px" }}>
-                <div style={sectionHeading}>Screenshots <span style={{ color: T.textMuted, fontWeight: 400 }}>({screenshots.length})</span></div>
-                <div style={{ display: "flex", gap: 10 }}>
-                  {screenshots.map((src, i) => (
-                    <div key={i} onClick={() => setLightbox(i)}
-                      style={{ flex: 1, aspectRatio: "16/9", borderRadius: 8, overflow: "hidden", cursor: "zoom-in", border: `1px solid ${T.border}`, background: "#f1f5f9" }}>
-                      <img src={src} alt={`Screenshot ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                    </div>
-                  ))}
-                  {/* placeholder slots */}
-                  {Array.from({ length: 3 - screenshots.length }).map((_, i) => (
-                    <div key={`ph-${i}`} style={{ flex: 1, aspectRatio: "16/9", borderRadius: 8, border: `1px dashed ${T.border}`, background: "#f8fafc" }} />
-                  ))}
+          {/* Lower Row: Notes + Screenshots (omitted if both are empty) */}
+          {(hasNotes || hasShots) && (
+            <div style={{
+              padding: "10px 20px 20px",
+              display: "grid",
+              gridTemplateColumns: hasNotes && hasShots ? "1.2fr 1fr" : "1fr",
+              gap: 16,
+            }}>
+              {/* Notes (omitted if empty) */}
+              {hasNotes && (
+                <div>
+                  <label style={{ ...labelStyle, marginBottom: 6 }}>Notes</label>
+                  <div style={{
+                    ...inputStyle,
+                    minHeight: 68,
+                    maxHeight: 120,
+                    overflowY: "auto",
+                    lineHeight: 1.5,
+                    whiteSpace: "pre-wrap",
+                    background: "#f8fafc",
+                  }}>
+                    {trade.notes}
+                  </div>
                 </div>
-              </div>
-            </>
+              )}
+
+              {/* Screenshots (omitted if empty) */}
+              {hasShots && (
+                <div>
+                  <label style={{ ...labelStyle, marginBottom: 6 }}>
+                    Screenshots
+                    <span style={{ color: T.textMuted, fontWeight: 400, textTransform: "none", letterSpacing: 0, marginLeft: 6 }}>
+                      ({screenshots.length})
+                    </span>
+                  </label>
+                  <div style={{ display: "flex", gap: 8, height: 68 }}>
+                    {screenshots.map((src, i) => (
+                      <div
+                        key={i}
+                        onClick={() => setLightbox(i)}
+                        style={{ position: "relative", flex: 1, height: "100%", borderRadius: 6, overflow: "hidden", border: `1px solid ${T.border}`, background: "#f1f5f9", cursor: "zoom-in" }}
+                      >
+                        <img src={src} alt={`Screenshot ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
-          {/* Footer padding */}
-          <div style={{ height: 8 }} />
+          {/* Footer */}
+          <div style={{ borderTop: `1px solid ${T.border}`, padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "flex-end", background: "#f8fafc" }}>
+            <button onClick={onClose} className="btn-secondary"
+              style={{ cursor: "pointer", border: `1px solid ${T.border}`, background: T.surface, color: T.textSec, padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 500 }}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
 
@@ -269,7 +436,6 @@ function TradeDetailModal({ trade, onClose, onEdit, currency = "USD" }) {
           onClick={() => setLightbox(null)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.93)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}
         >
-          {/* Prev */}
           {lightbox > 0 && (
             <button onClick={e => { e.stopPropagation(); setLightbox(l => l - 1); }}
               style={{ position: "absolute", left: 20, background: "rgba(255,255,255,0.12)", border: "none", color: "#fff", width: 44, height: 44, borderRadius: "50%", cursor: "pointer", fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -278,19 +444,16 @@ function TradeDetailModal({ trade, onClose, onEdit, currency = "USD" }) {
           )}
           <img src={screenshots[lightbox]} alt="" onClick={e => e.stopPropagation()}
             style={{ maxWidth: "88vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 20px 60px rgba(0,0,0,0.6)", userSelect: "none" }} />
-          {/* Next */}
           {lightbox < screenshots.length - 1 && (
             <button onClick={e => { e.stopPropagation(); setLightbox(l => l + 1); }}
               style={{ position: "absolute", right: 20, background: "rgba(255,255,255,0.12)", border: "none", color: "#fff", width: 44, height: 44, borderRadius: "50%", cursor: "pointer", fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center" }}>
               ›
             </button>
           )}
-          {/* Close */}
           <button onClick={() => setLightbox(null)}
             style={{ position: "absolute", top: 18, right: 18, background: "rgba(255,255,255,0.12)", border: "none", color: "#fff", width: 36, height: 36, borderRadius: "50%", cursor: "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>
             ×
           </button>
-          {/* Dot indicators */}
           {screenshots.length > 1 && (
             <div style={{ position: "absolute", bottom: 20, display: "flex", gap: 6 }}>
               {screenshots.map((_, i) => (
@@ -324,9 +487,40 @@ function TradeModal({ trade, onSave, onClose }) {
     if (match) set("date", `${match[3]}-${match[2]}-${match[1]}`);
   }
 
+  // Calculate profit whenever relevant inputs change
+  function computeProfit(fields) {
+    const entry = parseFloat(fields.entry);
+    const exit = parseFloat(fields.exit);
+    const qty = parseFloat(fields.qty);
+    const fee = parseFloat(fields.fee) || 0;
+    const direction = fields.direction || "long";
+
+    if (!isNaN(entry) && !isNaN(exit)) {
+      const mult = !isNaN(qty) && qty > 0 ? qty : 1;
+      const diff = direction === "long" ? exit - entry : entry - exit;
+      const net = diff * mult - fee;
+      return parseFloat(net.toFixed(2));
+    }
+    return fields.profit;
+  }
+
+  function updateFieldAndRecalc(key, val) {
+    setFormError("");
+    setForm(prev => {
+      const next = { ...prev, [key]: val };
+      if (key === "entry" || key === "exit" || key === "qty" || key === "fee" || key === "direction") {
+        const calculated = computeProfit(next);
+        if (calculated !== undefined && calculated !== null && !isNaN(calculated)) {
+          next.profit = calculated;
+        }
+      }
+      return next;
+    });
+  }
+
   function handleSave() {
     if (!form.symbol) {
-      setFormError("Please fill in the Instrument field.");
+      setFormError("Please fill in the Symbol field.");
       return;
     }
     onSave({
@@ -363,161 +557,386 @@ function TradeModal({ trade, onSave, onClose }) {
 
   const shots = form.screenshots || [];
 
+  const cellThStyle = {
+    padding: "8px 10px",
+    background: "#f1f5f9",
+    borderRight: `1px solid ${T.border}`,
+    borderBottom: `1px solid ${T.border}`,
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: T.textSec,
+    whiteSpace: "nowrap",
+    textAlign: "left",
+  };
+
+  const cellTdStyle = {
+    padding: "4px 6px",
+    borderRight: `1px solid ${T.border}`,
+    background: "#fff",
+    verticalAlign: "middle",
+  };
+
+  const sheetInputStyle = {
+    width: "100%",
+    border: "1px solid transparent",
+    borderRadius: 4,
+    padding: "6px 8px",
+    fontSize: 13,
+    background: "transparent",
+    color: T.text,
+    boxSizing: "border-box",
+    outline: "none",
+  };
+
   return (
     <div
       onClick={e => e.target === e.currentTarget && onClose()}
-      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(2px)" }}
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(2px)", padding: 16 }}
     >
-      <div style={{ background: T.surface, borderRadius: 16, width: 560, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", border: `1px solid ${T.border}` }}>
+      <div style={{ background: T.surface, borderRadius: 14, width: 1340, maxWidth: "98vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", border: `1px solid ${T.border}`, display: "flex", flexDirection: "column" }}>
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: `1px solid ${T.border}` }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: T.text }}>{form.id ? "Edit trade" : "New trade"}</h2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${T.border}`, background: "#f8fafc" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: T.textSec, background: "#e2e8f0", padding: "3px 8px", borderRadius: 4 }}>Row entry</span>
+            <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: T.text }}>{form.id ? "Edit trade row" : "New trade row"}</h2>
+          </div>
           <button onClick={onClose} className="icon-btn" style={{ fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Excel / Spreadsheet row table */}
+        <div style={{ padding: "20px 20px 10px", overflowX: "auto" }}>
+          <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1240 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...cellThStyle, width: 95 }}>Symbol *</th>
+                  <th style={{ ...cellThStyle, width: 105 }}>Date</th>
+                  <th style={{ ...cellThStyle, width: 105 }}>Direction</th>
+                  <th style={{ ...cellThStyle, width: 85 }}>Entry</th>
+                  <th style={{ ...cellThStyle, width: 85 }}>Stop</th>
+                  <th style={{ ...cellThStyle, width: 85 }}>Exit</th>
+                  <th style={{ ...cellThStyle, width: 105 }}>Win / Lose</th>
+                  <th style={{ ...cellThStyle, width: 90 }}>Size</th>
+                  <th style={{ ...cellThStyle, width: 95 }}>Profit</th>
+                  <th style={{ ...cellThStyle, width: 85 }}>Fee</th>
+                  <th style={{ ...cellThStyle, width: 220 }}>Setup</th>
+                  <th style={{ ...cellThStyle, width: 85 }}>Risk</th>
+                  <th style={{ ...cellThStyle, width: 85, borderRight: "none" }}>Grade</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {/* 1. Symbol */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="text"
+                      value={form.symbol}
+                      placeholder="AAPL"
+                      onChange={e => set("symbol", e.target.value)}
+                      style={{ ...sheetInputStyle, textTransform: "uppercase", fontWeight: 700, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                    />
+                  </td>
 
-          {/* Trade fields */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 14px" }}>
-            <div>
-              <label style={labelStyle}>Instrument *</label>
-              <input type="text" value={form.symbol} placeholder="AAPL"
-                onChange={e => set("symbol", e.target.value)}
-                style={{ ...inputStyle, textTransform: "uppercase", fontWeight: 600 }} />
-            </div>
-            <div>
-              <label style={labelStyle}>Date</label>
-              <input type="text" value={dateText} placeholder="dd.mm.yyyy"
-                onChange={e => handleDateInput(e.target.value)}
-                maxLength={10} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Direction</label>
-              <select value={form.direction} onChange={e => set("direction", e.target.value)} style={inputStyle}>
-                <option value="long">Long</option>
-                <option value="short">Short</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Entry</label>
-              <input type="number" value={form.entry || ""} placeholder="0.00"
-                onChange={e => set("entry", e.target.value)} style={inputStyle} min="0" step="any" />
-            </div>
-            <div>
-              <label style={labelStyle}>Stop</label>
-              <input type="number" value={form.stop || ""} placeholder="0.00"
-                onChange={e => set("stop", e.target.value)} style={inputStyle} min="0" step="any" />
-            </div>
-            <div>
-              <label style={labelStyle}>Exit</label>
-              <input type="number" value={form.exit || ""} placeholder="— open position"
-                onChange={e => set("exit", e.target.value)} style={inputStyle} min="0" step="any" />
-            </div>
-            <div>
-              <label style={labelStyle}>Win / Lose</label>
-              <select value={form.result || ""} onChange={e => set("result", e.target.value)} style={inputStyle}>
-                <option value="">—</option>
-                <option value="win">Win</option>
-                <option value="loss">Loss</option>
-                <option value="breakeven">Breakeven</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Position Size</label>
-              <input type="number" value={form.qty || ""} placeholder="100"
-                onChange={e => set("qty", e.target.value)} style={inputStyle} min="0" step="any" />
-            </div>
-            <div>
-              <label style={labelStyle}>Profit</label>
-              <input type="number" value={form.profit || ""} placeholder="0.00"
-                onChange={e => set("profit", e.target.value)} style={inputStyle} step="any" />
-            </div>
-            <div>
-              <label style={labelStyle}>Fee</label>
-              <input type="number" value={form.fee || ""} placeholder="0.00"
-                onChange={e => set("fee", e.target.value)} style={inputStyle} min="0" step="any" />
-            </div>
-            <div>
-              <label style={labelStyle}>Setup</label>
-              <input type="text" value={form.strategy || ""} placeholder="e.g. Breakout"
-                onChange={e => set("strategy", e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Risk</label>
-              <input type="number" value={form.risk || ""} placeholder="0.00"
-                onChange={e => set("risk", e.target.value)} style={inputStyle} min="0" step="any" />
-            </div>
-            <div style={{ gridColumn: "span 2" }}>
-              <label style={labelStyle}>Setup Grade</label>
-              <select value={form.setupGrade || ""} onChange={e => set("setupGrade", e.target.value)} style={inputStyle}>
-                <option value="">—</option>
-                <option value="A+">A+</option>
-                <option value="A">A</option>
-                <option value="B">B</option>
-                <option value="C">C</option>
-                <option value="D">D</option>
-                <option value="F">F</option>
-              </select>
-            </div>
-            <div style={{ gridColumn: "span 2" }}>
-              <label style={labelStyle}>Notes</label>
-              <textarea value={form.notes} onChange={e => set("notes", e.target.value)}
-                placeholder="What did you observe? What could you improve?"
-                style={{ ...inputStyle, minHeight: 72, resize: "vertical", lineHeight: 1.5 }} />
-            </div>
+                  {/* 2. Date */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="text"
+                      value={dateText}
+                      placeholder="dd.mm.yyyy"
+                      onChange={e => handleDateInput(e.target.value)}
+                      maxLength={10}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                    />
+                  </td>
+
+                  {/* 3. Direction */}
+                  <td style={cellTdStyle}>
+                    <div style={{ display: "flex", gap: 3, padding: "2px 0" }}>
+                      <button
+                        type="button"
+                        onClick={() => updateFieldAndRecalc("direction", "long")}
+                        style={{
+                          flex: 1,
+                          cursor: "pointer",
+                          border: `1px solid ${form.direction === "long" ? T.green : T.border}`,
+                          background: form.direction === "long" ? T.greenBg : "#f8fafc",
+                          color: form.direction === "long" ? T.greenText : T.textMuted,
+                          borderRadius: 4,
+                          padding: "5px 4px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          textTransform: "capitalize",
+                          transition: "all 0.1s ease",
+                        }}
+                      >
+                        Long
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateFieldAndRecalc("direction", "short")}
+                        style={{
+                          flex: 1,
+                          cursor: "pointer",
+                          border: `1px solid ${form.direction === "short" ? T.red : T.border}`,
+                          background: form.direction === "short" ? T.redBg : "#f8fafc",
+                          color: form.direction === "short" ? T.redText : T.textMuted,
+                          borderRadius: 4,
+                          padding: "5px 4px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          textTransform: "capitalize",
+                          transition: "all 0.1s ease",
+                        }}
+                      >
+                        Short
+                      </button>
+                    </div>
+                  </td>
+
+                  {/* 4. Entry */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="number"
+                      value={form.entry || ""}
+                      placeholder="0.00"
+                      onChange={e => updateFieldAndRecalc("entry", e.target.value)}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                      min="0"
+                      step="any"
+                    />
+                  </td>
+
+                  {/* 5. Stop */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="number"
+                      value={form.stop || ""}
+                      placeholder="0.00"
+                      onChange={e => set("stop", e.target.value)}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                      min="0"
+                      step="any"
+                    />
+                  </td>
+
+                  {/* 6. Exit */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="number"
+                      value={form.exit || ""}
+                      placeholder="Open"
+                      onChange={e => updateFieldAndRecalc("exit", e.target.value)}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                      min="0"
+                      step="any"
+                    />
+                  </td>
+
+                  {/* 7. Win / Lose */}
+                  <td style={cellTdStyle}>
+                    <div style={{ display: "flex", gap: 3, padding: "2px 0" }}>
+                      <button
+                        type="button"
+                        onClick={() => set("result", form.result === "win" ? "" : "win")}
+                        style={{
+                          flex: 1,
+                          cursor: "pointer",
+                          border: `1px solid ${form.result === "win" ? T.green : T.border}`,
+                          background: form.result === "win" ? T.greenBg : "#f8fafc",
+                          color: form.result === "win" ? T.greenText : T.textMuted,
+                          borderRadius: 4,
+                          padding: "5px 4px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          textTransform: "capitalize",
+                          transition: "all 0.1s ease",
+                        }}
+                      >
+                        Win
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => set("result", form.result === "loss" ? "" : "loss")}
+                        style={{
+                          flex: 1,
+                          cursor: "pointer",
+                          border: `1px solid ${form.result === "loss" ? T.red : T.border}`,
+                          background: form.result === "loss" ? T.redBg : "#f8fafc",
+                          color: form.result === "loss" ? T.redText : T.textMuted,
+                          borderRadius: 4,
+                          padding: "5px 4px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          textTransform: "capitalize",
+                          transition: "all 0.1s ease",
+                        }}
+                      >
+                        Lose
+                      </button>
+                    </div>
+                  </td>
+
+                  {/* 8. Position Size */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="number"
+                      value={form.qty || ""}
+                      placeholder="Qty"
+                      onChange={e => updateFieldAndRecalc("qty", e.target.value)}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                      min="0"
+                      step="any"
+                    />
+                  </td>
+
+                  {/* 9. Profit */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="number"
+                      value={form.profit !== null && form.profit !== undefined ? form.profit : ""}
+                      placeholder="0.00"
+                      onChange={e => set("profit", e.target.value)}
+                      style={{
+                        ...sheetInputStyle,
+                        background: "#f8fafc",
+                        border: `1px solid ${T.border}`,
+                        fontWeight: 600,
+                        color: form.profit > 0 ? T.greenText : form.profit < 0 ? T.redText : T.text,
+                      }}
+                      step="any"
+                    />
+                  </td>
+
+                  {/* 10. Fee */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="number"
+                      value={form.fee || ""}
+                      placeholder="0.00"
+                      onChange={e => updateFieldAndRecalc("fee", e.target.value)}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                      min="0"
+                      step="any"
+                    />
+                  </td>
+
+                  {/* 11. Setup */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="text"
+                      value={form.strategy || ""}
+                      placeholder="Strategy"
+                      onChange={e => set("strategy", e.target.value)}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                    />
+                  </td>
+
+                  {/* 12. Risk */}
+                  <td style={cellTdStyle}>
+                    <input
+                      type="number"
+                      value={form.risk || ""}
+                      placeholder="0.00"
+                      onChange={e => set("risk", e.target.value)}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}` }}
+                      min="0"
+                      step="any"
+                    />
+                  </td>
+
+                  {/* 13. Setup Grade */}
+                  <td style={{ ...cellTdStyle, borderRight: "none" }}>
+                    <select
+                      value={form.setupGrade || ""}
+                      onChange={e => set("setupGrade", e.target.value)}
+                      style={{ ...sheetInputStyle, background: "#f8fafc", border: `1px solid ${T.border}`, cursor: "pointer" }}
+                    >
+                      <option value="">—</option>
+                      <option value="A+">A+</option>
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                      <option value="D">D</option>
+                      <option value="F">F</option>
+                    </select>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Lower Row: Notes + Screenshots (side-by-side) */}
+        <div style={{ padding: "10px 20px 20px", display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16 }}>
+          {/* Notes */}
+          <div>
+            <label style={{ ...labelStyle, marginBottom: 6 }}>Notes</label>
+            <textarea
+              value={form.notes}
+              onChange={e => set("notes", e.target.value)}
+              placeholder="Trade observations, execution feedback, setup notes..."
+              style={{ ...inputStyle, minHeight: 68, height: 68, resize: "none", lineHeight: 1.45 }}
+            />
           </div>
 
           {/* Screenshots */}
-          <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 18 }}>
-            <label style={{ ...labelStyle, marginBottom: 10 }}>
+          <div>
+            <label style={{ ...labelStyle, marginBottom: 6 }}>
               Screenshots
               <span style={{ color: T.textMuted, fontWeight: 400, textTransform: "none", letterSpacing: 0, marginLeft: 6 }}>
                 {shots.length}/3
               </span>
             </label>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8, height: 68 }}>
               {shots.map((src, i) => (
-                <div key={i} style={{ position: "relative", flex: 1, aspectRatio: "16/9", borderRadius: 8, overflow: "hidden", border: `1px solid ${T.border}`, background: "#f1f5f9" }}>
+                <div key={i} style={{ position: "relative", flex: 1, height: "100%", borderRadius: 6, overflow: "hidden", border: `1px solid ${T.border}`, background: "#f1f5f9" }}>
                   <img src={src} alt={`Screenshot ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                   <button
                     type="button"
                     onClick={() => set("screenshots", shots.filter((_, idx) => idx !== i))}
-                    style={{ position: "absolute", top: 5, right: 5, background: "rgba(15,23,42,0.65)", border: "none", color: "#fff", borderRadius: "50%", width: 20, height: 20, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>
+                    style={{ position: "absolute", top: 3, right: 3, background: "rgba(15,23,42,0.65)", border: "none", color: "#fff", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}
+                  >
                     ×
                   </button>
                 </div>
               ))}
               {shots.length < 3 && (
-                <label style={{ flex: 1, aspectRatio: "16/9", borderRadius: 8, border: `1.5px dashed ${T.border}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textMuted, fontSize: 11, gap: 5, background: "#f8fafc", transition: "border-color 0.15s" }}>
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-                  Add image
+                <label style={{ flex: 1, height: "100%", borderRadius: 6, border: `1.5px dashed ${T.border}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textMuted, fontSize: 11, gap: 2, background: "#f8fafc" }}>
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+                  <span>Add image</span>
                   <input type="file" accept="image/*" multiple onChange={handleScreenshotAdd} style={{ display: "none" }} />
                 </label>
               )}
-              {/* Placeholder slots to keep layout stable */}
               {Array.from({ length: Math.max(0, 2 - shots.length) }).map((_, i) => (
-                <div key={`ph-${i}`} style={{ flex: 1, aspectRatio: "16/9" }} />
+                <div key={`ph-${i}`} style={{ flex: 1, height: "100%" }} />
               ))}
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div style={{ borderTop: `1px solid ${T.border}`, padding: "16px 24px" }}>
-          {formError && (
-            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: T.redBg, color: T.redText, fontSize: 12, fontWeight: 500 }}>
-              {formError}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <div style={{ borderTop: `1px solid ${T.border}`, padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#f8fafc" }}>
+          <div>
+            {formError && (
+              <span style={{ padding: "6px 12px", borderRadius: 6, background: T.redBg, color: T.redText, fontSize: 12, fontWeight: 500 }}>
+                {formError}
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
             <button onClick={onClose} className="btn-secondary"
-              style={{ cursor: "pointer", border: `1px solid ${T.border}`, background: T.surface, color: T.textSec, padding: "9px 18px", borderRadius: 8, fontSize: 13, fontWeight: 500 }}>
+              style={{ cursor: "pointer", border: `1px solid ${T.border}`, background: T.surface, color: T.textSec, padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 500 }}>
               Cancel
             </button>
             <button onClick={handleSave} className="btn-primary"
-              style={{ cursor: "pointer", border: "none", background: T.text, color: "#fff", padding: "9px 20px", borderRadius: 8, fontSize: 13, fontWeight: 500 }}>
+              style={{ cursor: "pointer", border: "none", background: T.text, color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 500 }}>
               Save trade
             </button>
           </div>
@@ -805,8 +1224,8 @@ export default function App() {
         return true;
       })
       .sort((a, b) => {
-        let av = sortCol === "pnl" ? calcPnL(a) : a[sortCol];
-        let bv = sortCol === "pnl" ? calcPnL(b) : b[sortCol];
+        let av = (sortCol === "profit" || sortCol === "pnl") ? (a.profit != null ? a.profit : calcPnL(a)) : a[sortCol];
+        let bv = (sortCol === "profit" || sortCol === "pnl") ? (b.profit != null ? b.profit : calcPnL(b)) : b[sortCol];
         if (av === null || av === undefined) av = sortDir < 0 ? -Infinity : Infinity;
         if (bv === null || bv === undefined) bv = sortDir < 0 ? -Infinity : Infinity;
         return (typeof av === "string" ? av.localeCompare(bv) : av - bv) * sortDir;
@@ -850,7 +1269,7 @@ export default function App() {
     <div style={{ minHeight: "100vh" }}>
       {/* ── Top Nav ── */}
       <header style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, zIndex: 50 }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 24px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 28, height: 28, borderRadius: 8, background: T.text, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -893,7 +1312,7 @@ export default function App() {
       </header>
 
       {/* ── Main ── */}
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px" }}>
+      <main style={{ maxWidth: 1440, margin: "0 auto", padding: "28px 24px" }}>
 
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 24 }}>
@@ -944,71 +1363,126 @@ export default function App() {
           ) : (
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1100 }}>
                   <thead>
                     <tr>
+                      <ThSort col="symbol" label="Symbol" />
                       <ThSort col="date" label="Date" />
-                      <ThSort col="symbol" label="Instrument" />
-                      <ThSort col="direction" label="Side" />
+                      <ThSort col="direction" label="Direction" />
                       <ThSort col="entry" label="Entry" />
+                      <ThSort col="stop" label="Stop" />
                       <ThSort col="exit" label="Exit" />
-                      <ThSort col="result" label="W/L" />
+                      <ThSort col="result" label="Win / Lose" />
                       <ThSort col="qty" label="Size" />
-                      <ThSort col="pnl" label="P&L" />
-                      <ThSort col="strategy" label="Setup" />
-                      <th style={{ borderBottom: `1px solid ${T.border}`, background: "#f8fafc", width: 80 }} />
+                      <ThSort col="profit" label="Profit" />
+                      <ThSort col="fee" label="Fee" />
+                      <ThSort col="strategy" label="Setup" style={{ minWidth: 160 }} />
+                      <ThSort col="risk" label="Risk" />
+                      <ThSort col="setupGrade" label="Grade" />
+                      <th style={{ borderBottom: `1px solid ${T.border}`, background: "#f8fafc", width: 70 }} />
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map(t => {
-                      const pnl = calcPnL(t);
-                      const hasShots = (t.screenshots || []).length > 0;
+                      const netProfit = t.profit != null ? t.profit : calcPnL(t);
+                      const dash = "—";
                       return (
                         <tr key={t.id} className="tr-hover"
                           onClick={() => setDetailTrade(t)}
                           style={{ borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}>
-                          <td style={td}>{fmtDate(t.date)}</td>
-                          <td style={{ ...td, fontWeight: 600 }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              {t.symbol}
-                              {hasShots && (
-                                <span title={`${t.screenshots.length} screenshot${t.screenshots.length > 1 ? "s" : ""}`}
-                                  style={{ fontSize: 10, color: T.textMuted }}>
-                                  🖼
-                                </span>
-                              )}
-                            </span>
+                          {/* 1. Symbol */}
+                          <td style={{ ...td, fontWeight: 700, textTransform: "uppercase" }}>
+                            {t.symbol}
                           </td>
+
+                          {/* 2. Date */}
+                          <td style={td}>{t.date ? fmtDate(t.date) : dash}</td>
+
+                          {/* 3. Direction */}
                           <td style={td}>
-                            <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 8px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: t.direction === "long" ? T.greenBg : T.redBg, color: t.direction === "long" ? T.greenText : T.redText }}>
+                            <span style={{
+                              display: "inline-flex", alignItems: "center", gap: 3,
+                              padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+                              textTransform: "capitalize",
+                              background: t.direction === "long" ? T.greenBg : T.redBg,
+                              color: t.direction === "long" ? T.greenText : T.redText,
+                              border: `1px solid ${t.direction === "long" ? T.green : T.red}`,
+                            }}>
                               {t.direction === "long" ? "↑" : "↓"} {t.direction}
                             </span>
                           </td>
-                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>{t.entry ? (+t.entry).toFixed(2) : "—"}</td>
+
+                          {/* 4. Entry */}
                           <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>
-                            {t.exit ? (+t.exit).toFixed(2) : <span style={{ color: T.textMuted, fontSize: 11 }}>open</span>}
+                            {t.entry != null ? (+t.entry).toFixed(2) : dash}
                           </td>
+
+                          {/* 5. Stop */}
+                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>
+                            {t.stop != null ? (+t.stop).toFixed(2) : dash}
+                          </td>
+
+                          {/* 6. Exit */}
+                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>
+                            {t.exit != null ? (+t.exit).toFixed(2) : <span style={{ color: T.textMuted, fontSize: 11 }}>open</span>}
+                          </td>
+
+                          {/* 7. Win / Lose */}
                           <td style={td}>
-                            {t.result && (
-                              <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 500,
+                            {t.result ? (
+                              <span style={{
+                                display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+                                textTransform: "capitalize",
                                 background: t.result === "win" ? T.greenBg : t.result === "loss" ? T.redBg : "#f1f5f9",
-                                color: t.result === "win" ? T.greenText : t.result === "loss" ? T.redText : T.textSec }}>
-                                {t.result === "win" ? "W" : t.result === "loss" ? "L" : "BE"}
+                                color: t.result === "win" ? T.greenText : t.result === "loss" ? T.redText : T.textSec,
+                                border: `1px solid ${t.result === "win" ? T.green : t.result === "loss" ? T.red : T.border}`,
+                              }}>
+                                {t.result === "win" ? "Win" : t.result === "loss" ? "Lose" : "BE"}
                               </span>
-                            )}
+                            ) : dash}
                           </td>
-                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>{t.qty ? (+t.qty).toLocaleString() : "—"}</td>
-                          <td style={{ ...td, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: pnl === null ? T.textMuted : pnl >= 0 ? T.green : T.red }}>
-                            {pnl !== null ? fmtCcy(pnl, currency) : "—"}
+
+                          {/* 8. Size */}
+                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>
+                            {t.qty != null ? (+t.qty).toLocaleString() : dash}
                           </td>
-                          <td style={td}>
-                            {t.strategy && (
-                              <span style={{ display: "inline-block", background: "#f1f5f9", border: `1px solid ${T.border}`, borderRadius: 20, padding: "2px 8px", fontSize: 11, color: T.textSec }}>
+
+                          {/* 9. Profit */}
+                          <td style={{
+                            ...td,
+                            fontWeight: 700,
+                            fontVariantNumeric: "tabular-nums",
+                            color: netProfit == null ? T.textMuted : netProfit >= 0 ? T.green : T.red,
+                          }}>
+                            {netProfit != null ? fmtProfitCcy(netProfit, currency) : dash}
+                          </td>
+
+                          {/* 10. Fee */}
+                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>
+                            {t.fee != null ? fmtValueCcy(+t.fee, currency) : dash}
+                          </td>
+
+                          {/* 11. Setup */}
+                          <td style={{ ...td, maxWidth: 260 }}>
+                            {t.strategy ? (
+                              <span style={{ display: "inline-block", background: "#f1f5f9", border: `1px solid ${T.border}`, borderRadius: 6, padding: "2px 8px", fontSize: 12, color: T.textSec, wordBreak: "break-word" }}>
                                 {t.strategy}
                               </span>
-                            )}
+                            ) : dash}
                           </td>
-                          <td style={{ ...td, textAlign: "right", paddingRight: 12 }}>
+
+                          {/* 12. Risk */}
+                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>
+                            {t.risk != null ? fmtValueCcy(+t.risk, currency) : dash}
+                          </td>
+
+                          {/* 13. Grade */}
+                          <td style={{ ...td, fontWeight: 600 }}>
+                            {t.setupGrade || dash}
+                          </td>
+
+                          {/* Actions */}
+                          <td style={{ ...td, textAlign: "right", paddingRight: 10 }}>
                             <div style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
                               <button onClick={e => { e.stopPropagation(); setModal(t); }} className="icon-btn" title="Edit">
                                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9 2l2 2-6 6H3V8l6-6z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
