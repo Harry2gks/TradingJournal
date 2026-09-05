@@ -9,8 +9,10 @@ const STORAGE_KEY = "trading-journal-trades-v1";
 
 const defaultForm = {
   symbol: "", date: new Date().toISOString().slice(0, 10),
-  direction: "long", qty: "", entry: "", exit: "",
-  strategy: "", risk: "", notes: "", screenshots: [],
+  direction: "long", entry: "", stop: "", exit: "",
+  result: "", qty: "", profit: "", fee: "",
+  strategy: "", risk: "", setupGrade: "",
+  notes: "", screenshots: [],
 };
 
 function calcPnL(t) {
@@ -57,11 +59,11 @@ function compressImage(dataUrl, maxWidth = 1800, quality = 0.82) {
 
 function exportCSV(trades) {
   if (!trades.length) return;
-  const headers = ["Date","Symbol","Direction","Quantity","Entry Price","Exit Price","P&L","Strategy","Risk","Notes"];
+  const headers = ["Date","Instrument","Direction","Entry","Stop","Exit","Win/Lose","Position Size","P&L","Profit","Fee","Setup","Risk","Setup Grade","Notes"];
   const rows = trades.map(t => {
     const pnl = calcPnL(t);
-    return [t.date, t.symbol, t.direction, t.qty, t.entry, t.exit || "", pnl ?? "", t.strategy || "", t.risk || "", (t.notes || "").replace(/"/g, '""')]
-      .map(v => `"${v}"`).join(",");
+    return [t.date, t.symbol, t.direction, t.entry ?? "", t.stop ?? "", t.exit ?? "", t.result || "", t.qty ?? "", pnl ?? "", t.profit ?? "", t.fee ?? "", t.strategy || "", t.risk ?? "", t.setupGrade || "", t.notes || ""]
+      .map(v => `"${String(v).replace(/"/g, '""')}"`).join(",");
   });
   const csv = [headers.join(","), ...rows].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -82,10 +84,18 @@ function importCSV(file, onImport) {
       return {
         id: uuidv4(),
         date: cols[0], symbol: cols[1], direction: cols[2],
-        qty: parseFloat(cols[3]) || "", entry: parseFloat(cols[4]) || "",
+        entry: cols[3] ? parseFloat(cols[3]) : null,
+        stop: cols[4] ? parseFloat(cols[4]) : null,
         exit: cols[5] ? parseFloat(cols[5]) : null,
-        strategy: cols[7] || "", risk: cols[8] ? parseFloat(cols[8]) : null,
-        notes: cols[9] || "", screenshots: [],
+        result: cols[6] || "",
+        qty: cols[7] ? parseFloat(cols[7]) : null,
+        // cols[8] = P&L (computed, skip)
+        profit: cols[9] ? parseFloat(cols[9]) : null,
+        fee: cols[10] ? parseFloat(cols[10]) : null,
+        strategy: cols[11] || "",
+        risk: cols[12] ? parseFloat(cols[12]) : null,
+        setupGrade: cols[13] || "",
+        notes: cols[14] || "", screenshots: [],
       };
     });
     onImport(imported);
@@ -148,13 +158,23 @@ function TradeDetailModal({ trade, onClose, onEdit, currency = "USD" }) {
   const pnl = calcPnL(trade);
   const screenshots = trade.screenshots || [];
 
+  const dash = <span style={{ color: T.textMuted }}>—</span>;
+
+  const resultLabel = { win: "Win", loss: "Loss", breakeven: "Breakeven" }[trade.result] || null;
+  const resultColor = { win: T.green, loss: T.red, breakeven: T.textMuted }[trade.result] || T.textMuted;
+
   const fields = [
-    { label: "Date",     value: trade.date },
-    { label: "Entry",    value: trade.entry ? (+trade.entry).toFixed(2) : "—" },
-    { label: "Exit",     value: trade.exit  ? (+trade.exit).toFixed(2)  : <span style={{ color: T.textMuted }}>Open</span> },
-    { label: "Quantity", value: trade.qty   ? (+trade.qty).toLocaleString() : "—" },
-    { label: "Strategy", value: trade.strategy || <span style={{ color: T.textMuted }}>—</span> },
-    { label: "Risk",     value: trade.risk  ? fmtCcy(+trade.risk, currency) : <span style={{ color: T.textMuted }}>—</span> },
+    { label: "Date",          value: trade.date ? fmtDate(trade.date) : dash },
+    { label: "Entry",         value: trade.entry ? (+trade.entry).toFixed(2) : dash },
+    { label: "Stop",          value: trade.stop  ? (+trade.stop).toFixed(2)  : dash },
+    { label: "Exit",          value: trade.exit  ? (+trade.exit).toFixed(2)  : <span style={{ color: T.textMuted }}>Open</span> },
+    { label: "Win / Lose",    value: resultLabel  ? <span style={{ color: resultColor, fontWeight: 600 }}>{resultLabel}</span> : dash },
+    { label: "Position Size", value: trade.qty   ? (+trade.qty).toLocaleString() : dash },
+    { label: "Profit",        value: trade.profit != null ? fmtCcy(+trade.profit, currency) : dash },
+    { label: "Fee",           value: trade.fee   ? fmtCcy(+trade.fee, currency)  : dash },
+    { label: "Setup",         value: trade.strategy || dash },
+    { label: "Risk",          value: trade.risk  ? fmtCcy(+trade.risk, currency) : dash },
+    { label: "Setup Grade",   value: trade.setupGrade || dash },
   ];
 
   return (
@@ -164,7 +184,7 @@ function TradeDetailModal({ trade, onClose, onEdit, currency = "USD" }) {
         onClick={e => e.target === e.currentTarget && onClose()}
         style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(2px)" }}
       >
-        <div style={{ background: T.surface, borderRadius: 16, width: 540, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", border: `1px solid ${T.border}` }}>
+        <div style={{ background: T.surface, borderRadius: 16, width: 620, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", border: `1px solid ${T.border}` }}>
 
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px" }}>
@@ -180,7 +200,7 @@ function TradeDetailModal({ trade, onClose, onEdit, currency = "USD" }) {
               </span>
               {pnl !== null && (
                 <span style={{ fontSize: 16, fontWeight: 600, color: pnl >= 0 ? T.green : T.red, fontVariantNumeric: "tabular-nums" }}>
-                  {fmtCcy(pnl)}
+                  {fmtCcy(pnl, currency)}
                 </span>
               )}
             </div>
@@ -305,18 +325,23 @@ function TradeModal({ trade, onSave, onClose }) {
   }
 
   function handleSave() {
-    if (!form.symbol || !form.date || !form.direction || !form.qty || !form.entry) {
-      setFormError("Please fill in Symbol, Date, Direction, Quantity and Entry Price.");
+    if (!form.symbol) {
+      setFormError("Please fill in the Instrument field.");
       return;
     }
     onSave({
       ...form,
       id: form.id || uuidv4(),
       symbol: form.symbol.toUpperCase(),
-      qty: parseFloat(form.qty),
-      entry: parseFloat(form.entry),
+      entry: form.entry ? parseFloat(form.entry) : null,
+      stop: form.stop ? parseFloat(form.stop) : null,
       exit: form.exit ? parseFloat(form.exit) : null,
+      qty: form.qty ? parseFloat(form.qty) : null,
+      profit: form.profit ? parseFloat(form.profit) : null,
+      fee: form.fee ? parseFloat(form.fee) : null,
       risk: form.risk ? parseFloat(form.risk) : null,
+      result: form.result || "",
+      setupGrade: form.setupGrade || "",
     });
   }
 
@@ -343,7 +368,7 @@ function TradeModal({ trade, onSave, onClose }) {
       onClick={e => e.target === e.currentTarget && onClose()}
       style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(2px)" }}
     >
-      <div style={{ background: T.surface, borderRadius: 16, width: 500, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", border: `1px solid ${T.border}` }}>
+      <div style={{ background: T.surface, borderRadius: 16, width: 560, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", border: `1px solid ${T.border}` }}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: `1px solid ${T.border}` }}>
@@ -357,48 +382,84 @@ function TradeModal({ trade, onSave, onClose }) {
           {/* Trade fields */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 14px" }}>
             <div>
-              <label style={labelStyle}>Symbol *</label>
+              <label style={labelStyle}>Instrument *</label>
               <input type="text" value={form.symbol} placeholder="AAPL"
                 onChange={e => set("symbol", e.target.value)}
                 style={{ ...inputStyle, textTransform: "uppercase", fontWeight: 600 }} />
             </div>
             <div>
-              <label style={labelStyle}>Date *</label>
+              <label style={labelStyle}>Date</label>
               <input type="text" value={dateText} placeholder="dd.mm.yyyy"
                 onChange={e => handleDateInput(e.target.value)}
                 maxLength={10} style={inputStyle} />
             </div>
             <div>
-              <label style={labelStyle}>Direction *</label>
+              <label style={labelStyle}>Direction</label>
               <select value={form.direction} onChange={e => set("direction", e.target.value)} style={inputStyle}>
                 <option value="long">Long</option>
                 <option value="short">Short</option>
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Quantity *</label>
-              <input type="number" value={form.qty || ""} placeholder="100"
-                onChange={e => set("qty", e.target.value)} style={inputStyle} min="0" step="any" />
-            </div>
-            <div>
-              <label style={labelStyle}>Entry Price *</label>
+              <label style={labelStyle}>Entry</label>
               <input type="number" value={form.entry || ""} placeholder="0.00"
                 onChange={e => set("entry", e.target.value)} style={inputStyle} min="0" step="any" />
             </div>
             <div>
-              <label style={labelStyle}>Exit Price</label>
+              <label style={labelStyle}>Stop</label>
+              <input type="number" value={form.stop || ""} placeholder="0.00"
+                onChange={e => set("stop", e.target.value)} style={inputStyle} min="0" step="any" />
+            </div>
+            <div>
+              <label style={labelStyle}>Exit</label>
               <input type="number" value={form.exit || ""} placeholder="— open position"
                 onChange={e => set("exit", e.target.value)} style={inputStyle} min="0" step="any" />
             </div>
             <div>
-              <label style={labelStyle}>Strategy / Setup</label>
+              <label style={labelStyle}>Win / Lose</label>
+              <select value={form.result || ""} onChange={e => set("result", e.target.value)} style={inputStyle}>
+                <option value="">—</option>
+                <option value="win">Win</option>
+                <option value="loss">Loss</option>
+                <option value="breakeven">Breakeven</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Position Size</label>
+              <input type="number" value={form.qty || ""} placeholder="100"
+                onChange={e => set("qty", e.target.value)} style={inputStyle} min="0" step="any" />
+            </div>
+            <div>
+              <label style={labelStyle}>Profit</label>
+              <input type="number" value={form.profit || ""} placeholder="0.00"
+                onChange={e => set("profit", e.target.value)} style={inputStyle} step="any" />
+            </div>
+            <div>
+              <label style={labelStyle}>Fee</label>
+              <input type="number" value={form.fee || ""} placeholder="0.00"
+                onChange={e => set("fee", e.target.value)} style={inputStyle} min="0" step="any" />
+            </div>
+            <div>
+              <label style={labelStyle}>Setup</label>
               <input type="text" value={form.strategy || ""} placeholder="e.g. Breakout"
                 onChange={e => set("strategy", e.target.value)} style={inputStyle} />
             </div>
             <div>
-              <label style={labelStyle}>Risk ($)</label>
+              <label style={labelStyle}>Risk</label>
               <input type="number" value={form.risk || ""} placeholder="0.00"
                 onChange={e => set("risk", e.target.value)} style={inputStyle} min="0" step="any" />
+            </div>
+            <div style={{ gridColumn: "span 2" }}>
+              <label style={labelStyle}>Setup Grade</label>
+              <select value={form.setupGrade || ""} onChange={e => set("setupGrade", e.target.value)} style={inputStyle}>
+                <option value="">—</option>
+                <option value="A+">A+</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+                <option value="F">F</option>
+              </select>
             </div>
             <div style={{ gridColumn: "span 2" }}>
               <label style={labelStyle}>Notes</label>
@@ -887,13 +948,14 @@ export default function App() {
                   <thead>
                     <tr>
                       <ThSort col="date" label="Date" />
-                      <ThSort col="symbol" label="Symbol" />
+                      <ThSort col="symbol" label="Instrument" />
                       <ThSort col="direction" label="Side" />
-                      <ThSort col="qty" label="Qty" />
                       <ThSort col="entry" label="Entry" />
                       <ThSort col="exit" label="Exit" />
+                      <ThSort col="result" label="W/L" />
+                      <ThSort col="qty" label="Size" />
                       <ThSort col="pnl" label="P&L" />
-                      <ThSort col="strategy" label="Strategy" />
+                      <ThSort col="strategy" label="Setup" />
                       <th style={{ borderBottom: `1px solid ${T.border}`, background: "#f8fafc", width: 80 }} />
                     </tr>
                   </thead>
@@ -922,11 +984,20 @@ export default function App() {
                               {t.direction === "long" ? "↑" : "↓"} {t.direction}
                             </span>
                           </td>
-                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>{(+t.qty).toLocaleString()}</td>
-                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>{(+t.entry).toFixed(2)}</td>
+                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>{t.entry ? (+t.entry).toFixed(2) : "—"}</td>
                           <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>
                             {t.exit ? (+t.exit).toFixed(2) : <span style={{ color: T.textMuted, fontSize: 11 }}>open</span>}
                           </td>
+                          <td style={td}>
+                            {t.result && (
+                              <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 500,
+                                background: t.result === "win" ? T.greenBg : t.result === "loss" ? T.redBg : "#f1f5f9",
+                                color: t.result === "win" ? T.greenText : t.result === "loss" ? T.redText : T.textSec }}>
+                                {t.result === "win" ? "W" : t.result === "loss" ? "L" : "BE"}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>{t.qty ? (+t.qty).toLocaleString() : "—"}</td>
                           <td style={{ ...td, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: pnl === null ? T.textMuted : pnl >= 0 ? T.green : T.red }}>
                             {pnl !== null ? fmtCcy(pnl, currency) : "—"}
                           </td>
